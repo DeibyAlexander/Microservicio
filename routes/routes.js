@@ -385,14 +385,16 @@ router.get("/endpoint7", async (req,res)=>{
 
 //! Contar el número de citas que un médico tiene en un día específico (por ejemplo, el médico con med_numMatriculaProfesional 1 en ‘2023-07-12’).
 
-router.get("/endpoint7", async (req,res)=>{
+router.get("/endpoint8", async (req,res)=>{
     
     const client = new MongoClient(conexiondb)
+
+    const genero = req.params.genero
     try {
         
         await client.connect()
         const db = client.db(nombredb)
-        const collection = db.collection("Medico")
+        const collection = db.collection("Usuarios")
         const result = await collection.aggregate([]).toArray()
 
         res.json(result)
@@ -475,6 +477,191 @@ router.get("/endpoint9", async (req, res) => {
         ]).toArray();
 
         res.json(result);
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: 'Error interno del servidor' });
+    } finally {
+        client.close();
+        console.log('Servidor Cerrado');
+    }
+})
+
+
+//! Obtener todas las citas realizadas por los pacientes de acuerdo al género registrado, siempre y cuando el estado de la cita se encuentra registrada como “Atendida”.
+
+router.get("/endpoint10/:genero", async (req,res)=>{
+    
+    const client = new MongoClient(conexiondb)
+
+    const genero = req.params.genero
+    try {
+        
+        await client.connect()
+        const db = client.db(nombredb)
+        const collection = db.collection("Usuarios")
+        const result = await collection.aggregate([
+            {
+                $lookup: {
+                    from: "Genero",
+                    localField: "usu_genero",
+                    foreignField: "gen_id",
+                    as : "usu_genero"
+                }
+            },
+            {
+                $unwind: "$usu_genero"
+            },
+            {
+                $match:{ "usu_genero.gen_nombre" : genero}
+            },
+            {
+                $lookup:{
+                    from: "Cita",
+                    localField: "usu_id",
+                    foreignField: "cit_datosUsuario",
+                    as : "citas_registradas"
+                }
+            },
+            {
+                $unwind: "$citas_registradas"
+            },
+            {
+                $lookup:{
+                    from: "Estado_Cita",
+                    localField: "citas_registradas.cit_estadoCita",
+                    foreignField: "estcita_id",
+                    as: "cit_estado"
+                }
+            },
+            {
+                $unwind: "$cit_estado"
+            },
+            {
+                $match:{"cit_estado.estcita_nombre":"Atendida"}
+            },
+            {
+                $project:{
+                    
+                        
+                        _id: 0,
+                        usu_nombre: 1,
+                        usu_segundo_nombre: 1,
+                        usu_primer_apellido_usuar: 1,
+                        usu_segdo_apellido_usuar: 1,
+                        usu_telefono: 1,
+                        usu_direccion: 1,
+                        usu_tipodoc: 1,
+                        usu_acudente: 9,
+                        usu_id: 9,
+
+                        "usu_genero.gen_id":1,
+                        "usu_genero.gen_nombre":1,
+                        "usu_genero.gen_abreviatura":1,
+
+
+                        "citas_registradas.cit_codigo":1,
+                        "citas_registradas.cit_fecha":1,
+                        "citas_registradas.cit_estadoCita":{
+                            "estcita_nombre": "$cit_estado.estcita_nombre",
+                            "estcita_id": "$cit_estado.estcita_id"
+
+                        },
+                        "citas_registradas.cit_medico":1,
+                        "citas_registradas.cit_datosUsuario":1,
+
+
+                 
+            }
+            }
+        ]).toArray()
+
+        res.json(result)
+   
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: 'Error interno del servidor' });
+    }finally{
+
+        client.close()
+        console.log("Servidor cerrado")
+    }
+})
+
+
+//! Insertar un paciente a la tabla usuario, donde si es menor de edad deberá solicitar primero que ingrese el acudiente y validar si ya estaba registrado el acudiente (El usuario deberá poder ingresar de manera personalizada los datos del usuario a ingresar).
+
+
+router.get("/endpoint11/:edades", async (req, res) => {
+    const client = new MongoClient(conexiondb);
+
+    
+
+    try {
+        await client.connect();
+        const db = client.db(nombredb);
+        /* const collection = db.collection("Cita"); */
+             const { usu_id, usu_nombre, usu_segundo_nombre, usu_primer_apellido_usuar,usu_segdo_apellido_usuar,usu_telefono, usu_direccion,usu_tipodoc,usu_genero, usu_acudente } = req.body;
+
+        const edad = req.params.edades
+
+        // Verificar si el paciente es menor de edad
+        if (edad < 18) {
+            // Si es menor de edad, se requiere un acudiente
+            if (!usu_acudente) {
+                return res.status(400).json({ message: 'Se requiere un acudiente para pacientes menores de edad' });
+            }
+
+            // Verificar si el acudiente existe en la base de datos
+      
+
+            const acudiente = await db.collection("Usuarios").aggregate( [
+                {
+                    $lookup:{
+                        from: "Acudiente",
+                        localField :"usu_acudente",
+                        foreignField: "acu_codigo",
+                        as: "usu_acudente"
+                    }
+                },
+                {
+                    $unwind: "$usu_acudente"
+                },
+                {
+                    $match: {
+                        usu_acudente: usu_acudente 
+                    }
+                }
+            ]).toArray();
+
+            if (acudiente.length === 0) {
+                return res.status(400).json({ message: 'El acudiente no está registrado en la base de datos' });
+            }
+
+                  // Crear el objeto de usuario (paciente)
+                  const paciente = {
+                    usu_id, usu_nombre, usu_segundo_nombre, usu_primer_apellido_usuar,usu_segdo_apellido_usuar,usu_telefono, usu_direccion,usu_tipodoc,usu_genero
+                };
+    
+                // Insertar el paciente en la tabla de Usuarios
+                const result = await db.collection("Usuarios").insertOne(paciente);
+    
+                res.json(result);
+        }
+
+        if (edad > 18) {
+        // Crear el objeto de usuario (paciente)
+            const paciente = {
+                usu_id, usu_nombre, usu_segundo_nombre, usu_primer_apellido_usuar,usu_segdo_apellido_usuar,usu_telefono, usu_direccion,usu_tipodoc,usu_genero
+            };
+
+            // Insertar el paciente en la tabla de Usuarios
+            const result = await db.collection("Usuarios").insertOne(paciente);
+
+            res.json(result);
+        }
+
+
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: 'Error interno del servidor' });
