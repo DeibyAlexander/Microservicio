@@ -389,13 +389,37 @@ router.get("/endpoint8", async (req,res)=>{
     
     const client = new MongoClient(conexiondb)
 
-    const genero = req.params.genero
+  
     try {
         
         await client.connect()
         const db = client.db(nombredb)
         const collection = db.collection("Usuarios")
-        const result = await collection.aggregate([]).toArray()
+        const result = await collection.aggregate([
+            
+                {
+                    $lookup:{
+                        from: "Acudiente",
+                        localField :"usu_acudente",
+                        foreignField: "acu_codigo",
+                        as: "usu_acudente"
+                    }
+                },
+                {
+                    $unwind: "$usu_acudente"
+                },
+                {
+                    $match: {
+                        "usu_acudente.acu_nombreCompleto":"Jose ANtonio Alvarez"  
+                    }
+                },
+                {
+                    $project:{
+                        _id:0,
+                        "usu_acudente.acu_nombreCompleto": 1,
+                    }
+                }
+            ]).toArray()
 
         res.json(result)
    
@@ -568,8 +592,6 @@ router.get("/endpoint10/:genero", async (req,res)=>{
                         },
                         "citas_registradas.cit_medico":1,
                         "citas_registradas.cit_datosUsuario":1,
-
-
                  
             }
             }
@@ -592,7 +614,7 @@ router.get("/endpoint10/:genero", async (req,res)=>{
 //! Insertar un paciente a la tabla usuario, donde si es menor de edad deberá solicitar primero que ingrese el acudiente y validar si ya estaba registrado el acudiente (El usuario deberá poder ingresar de manera personalizada los datos del usuario a ingresar).
 
 
-router.get("/endpoint11/:edades", async (req, res) => {
+router.get("/endpoint11/:edades/", async (req, res) => {
     const client = new MongoClient(conexiondb);
 
     
@@ -600,13 +622,14 @@ router.get("/endpoint11/:edades", async (req, res) => {
     try {
         await client.connect();
         const db = client.db(nombredb);
-        /* const collection = db.collection("Cita"); */
-             const { usu_id, usu_nombre, usu_segundo_nombre, usu_primer_apellido_usuar,usu_segdo_apellido_usuar,usu_telefono, usu_direccion,usu_tipodoc,usu_genero, usu_acudente } = req.body;
+ 
+        const { usu_id, usu_nombre, usu_segundo_nombre, usu_primer_apellido_usuar,usu_segdo_apellido_usuar,usu_telefono, usu_direccion,usu_tipodoc,usu_genero, usu_acudente } = req.body;
 
         const edad = req.params.edades
 
         // Verificar si el paciente es menor de edad
         if (edad < 18) {
+            
             // Si es menor de edad, se requiere un acudiente
             if (!usu_acudente) {
                 return res.status(400).json({ message: 'Se requiere un acudiente para pacientes menores de edad' });
@@ -616,6 +639,7 @@ router.get("/endpoint11/:edades", async (req, res) => {
       
 
             const acudiente = await db.collection("Usuarios").aggregate( [
+
                 {
                     $lookup:{
                         from: "Acudiente",
@@ -629,33 +653,39 @@ router.get("/endpoint11/:edades", async (req, res) => {
                 },
                 {
                     $match: {
-                        usu_acudente: usu_acudente 
+                        "usu_acudente.acu_nombreCompleto":"Jose ANtonio Alvarez"  
+                    }
+                },
+                {
+                    $project:{
+                        _id:0,
+                        "usu_acudente.acu_nombreCompleto": nombreAcudente,
                     }
                 }
             ]).toArray();
 
-            if (acudiente.length === 0) {
-                return res.status(400).json({ message: 'El acudiente no está registrado en la base de datos' });
-            }
 
-                  // Crear el objeto de usuario (paciente)
-                  const paciente = {
-                    usu_id, usu_nombre, usu_segundo_nombre, usu_primer_apellido_usuar,usu_segdo_apellido_usuar,usu_telefono, usu_direccion,usu_tipodoc,usu_genero
-                };
+
+            // Crear el objeto de usuario (paciente)
+            const insertacudiente = {
+                usu_id, usu_nombre, usu_segundo_nombre, usu_primer_apellido_usuar,usu_segdo_apellido_usuar,usu_telefono,usu_acudente, usu_direccion,usu_tipodoc,usu_genero
+            };
+
+            // Insertar el paciente en la tabla de Usuarios
+            const result = await db.collection("Acudiente").insertOne(insertacudiente);
     
-                // Insertar el paciente en la tabla de Usuarios
-                const result = await db.collection("Usuarios").insertOne(paciente);
-    
-                res.json(result);
+
+            res.json([acudiente, result]);
+
         }
 
-        if (edad > 18) {
-        // Crear el objeto de usuario (paciente)
+        if (edad >= 18) {
+        
             const paciente = {
                 usu_id, usu_nombre, usu_segundo_nombre, usu_primer_apellido_usuar,usu_segdo_apellido_usuar,usu_telefono, usu_direccion,usu_tipodoc,usu_genero
             };
 
-            // Insertar el paciente en la tabla de Usuarios
+    
             const result = await db.collection("Usuarios").insertOne(paciente);
 
             res.json(result);
