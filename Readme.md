@@ -50,4 +50,20 @@ CampusLands EPS busca implementar un sistema de gestión de citas para su person
 - La conexión a la base de datos debe realizarse mediante el SRV de MongoDB Atlas y se deben guardar las credenciales en variables de entorno utilizando dotenv.
 
 
+## Guía de Instalación y Uso
+
+1. Clona el repositorio desde [https://github.com/DeibyAlexander/Hamburguesas_MongoClient].
+2. Instala las dependencias usando 
+
+        npm install
+
+3. Configura la conexión a la base de datos MongoDB en el archivo de configuración.
+4. Ejecuta la aplicación utilizando 
+        
+        npm run start
+
+5. Accede a la aplicación a través de tu navegador web en [http://localhost:6996].
+
+
+
 ![Alt text](image.png)
